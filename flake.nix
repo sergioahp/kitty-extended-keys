@@ -71,50 +71,22 @@
         };
 
         # Create a kitty variant with extended keys built-in
-        kitty-extended = pkgs.kitty.overrideAttrs (oldAttrs: {
-          pname = "kitty-extended";
-          
-          # /nix/store/kyvrzzrapw5mfw3sf4mmiq5h126k87vf-kitty-extended-0.43.0/bin/kitty:
-          # line 25:
-          # /home/admin/code/nix/kitty/outputs/out/bin/.kitty-unwrapped: No
-          # such file or directory
-          postInstall = (oldAttrs.postInstall or "") + ''
-            # Install our extended keys config
-            mkdir -p $out/share/kitty
-            cp ${extended-keys-conf} $out/share/kitty/extended-keys.conf
-            
-            # Create wrapper script that handles config composition
-            mv $out/bin/kitty $out/bin/.kitty-unwrapped
-            cat > $out/bin/kitty << 'EOF'
-#!/usr/bin/env bash
-set -eu
-
-: "''${XDG_CONFIG_HOME:=$HOME/.config}"
-USER_CONF="''${XDG_CONFIG_HOME}/kitty/kitty.conf"
-
-# Check for --no-system-config flag
-USE_USER_CONFIG=1
-declare -a args=()
-for arg in "$@"; do
-  if [ "$arg" = "--no-system-config" ]; then
-    USE_USER_CONFIG=0
-  else
-    args+=("$arg")
-  fi
-done
-
-# Build config argument
-if [ "$USE_USER_CONFIG" = "1" ] && [ -r "$USER_CONF" ]; then
-  CONFIG_ARG="--config=$USER_CONF --config=$out/share/kitty/extended-keys.conf"
-else
-  CONFIG_ARG="--config=$out/share/kitty/extended-keys.conf"
-fi
-
-exec $out/bin/.kitty-unwrapped $CONFIG_ARG "''${args[@]}"
-EOF
-            chmod +x $out/bin/kitty
-          '';
-        });
+          # kitty ignores system config if profided config arg
+          # TODO: a postfixup wrapper for convenince (the user could pass
+          # extra --config kwargs for using his config) (Not sure if we
+          # want to do this, it's not too much effort to pass
+          # ~/.config/kitty/kitty.conf
+          # TODO: should kitty-extended reflect kitty version?
+          kitty-extended = (pkgs.symlinkJoin {
+            pname = "kitty-extended";
+            version = "0.0.1";
+            paths = [ pkgs.kitty ];
+            buildInputs = [ pkgs.makeWrapper ];
+            postBuild = ''
+              wrapProgram $out/bin/kitty \
+                --add-flags "--config ${extended-keys-conf}"
+            '';
+          });
       in
       {
         packages = {
