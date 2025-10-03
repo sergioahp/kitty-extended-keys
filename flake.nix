@@ -101,10 +101,10 @@
 
           # ----- utilities -------------------------------------------------------------
 
-          debug() { [[ "''${CLIP2PATH_DEBUG:-0}" == "1" ]] && printf '[clip2path] %s\n' "$*" >&2 || true; }
+          debug() { [[ "''${CLIP2PATH_DEBUG:-0}" == "1" ]] && printf '[kitty-clipboard] %s\n' "$*" >&2 || true; }
 
           die() {
-            printf 'clip2path: %s\n' "$*" >&2
+            printf 'kitty-clipboard: %s\n' "$*" >&2
             exit 1
           }
 
@@ -135,10 +135,10 @@
           # Use Kitty's per-launch control socket if available (set by --allow-remote-control).
           kitty_send_text() {
             if [[ -n "''${KITTY_LISTEN_ON:-}" ]]; then
-              kitty @ --to "$KITTY_LISTEN_ON" send-text --stdin
+              ${pkgs.kitty}/bin/kitty @ --to "$KITTY_LISTEN_ON" send-text --stdin
             else
               # Fallback: try default target (less secure; avoid if possible).
-              kitty @ send-text --stdin
+              ${pkgs.kitty}/bin/kitty @ send-text --stdin
             fi
           }
 
@@ -271,7 +271,7 @@
 
           # ----- preflight -------------------------------------------------------------
 
-          have kitty || die "missing dependency: kitty"
+          have ${pkgs.kitty}/bin/kitty || die "missing dependency: kitty"
 
           # Check display server and required clipboard tools
           display_server=$(detect_display_server)
@@ -315,9 +315,9 @@
             debug "no image found, delegating to kitty for text paste"
             # Let kitty handle text with its safety features
             if [[ -n "''${KITTY_LISTEN_ON:-}" ]]; then
-              kitty @ --to "$KITTY_LISTEN_ON" action paste_from_clipboard
+              ${pkgs.kitty}/bin/kitty @ --to "$KITTY_LISTEN_ON" action paste_from_clipboard
             else
-              kitty @ action paste_from_clipboard
+              ${pkgs.kitty}/bin/kitty @ action paste_from_clipboard
             fi
           fi
         '';
