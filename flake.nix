@@ -78,249 +78,146 @@
           text = cfgText;
         };
 
-        # Kitty clipboard handler script for Claude Code integration
-        kitty-clipboard-handler = pkgs.writeShellScript "kitty-clipboard-handler" ''
-          #!/usr/bin/env bash
-          # clip2path — robust Wayland/X11 clipboard → Kitty hybrid paste handler
-          # - Text in clipboard ⇒ use kitty's paste-from-clipboard (with safety features)
-          # - Image in clipboard ⇒ save to a unique temp file and paste its quoted path.
-          #
-          # Requirements: kitty, and either:
-          #   - Wayland: wl-clipboard (wl-paste)
-          #   - X11: xclip or xsel
-          # Kitty mapping must use `--allow-remote-control` so KITTY_LISTEN_ON is set.
-          #
-          # Optional env:
-          #   CLIP2PATH_TMPDIR   : directory for saved images (default: $TMPDIR or /tmp)
-          #   CLIP2PATH_DEBUG=1  : emit debug info to stderr
+        # Kitty clipboard handler script for Claude Code integration (Lua version)
+        kitty-clipboard-handler = pkgs.writeTextFile {
+          name = "kitty-clipboard-handler.lua";
+          executable = true;
+          text = /*lua*/''
+            #!${pkgs.lua}/bin/lua
 
-          set -Eeuo pipefail
-          IFS=$'\n\t'
-          umask 077
-          export LC_ALL=C
+            -- Simplified Wayland-only clipboard handler for kitty
+            -- Handles both images (save to temp file) and text (kitty paste)
 
-          # ----- utilities -------------------------------------------------------------
+            local os = require("os")
+            local io = require("io")
 
-          debug() { [[ "''${CLIP2PATH_DEBUG:-0}" == "1" ]] && printf '[kitty-clipboard] %s\n' "$*" >&2 || true; }
+            -- Debug function
+            local function debug(msg)
+              io.stderr:write("[DEBUG] " .. msg .. "\n")
+            end
 
-          die() {
-            printf 'kitty-clipboard: %s\n' "$*" >&2
-            exit 1
-          }
+            -- Check if we have required environment
+            if not os.getenv("WAYLAND_DISPLAY") then
+              io.stderr:write("kitty-clipboard: Wayland environment required\n")
+              os.exit(1)
+            end
 
-          have() { command -v "$1" >/dev/null 2>&1; }
+            debug("KITTY_LISTEN_ON=" .. (os.getenv("KITTY_LISTEN_ON") or "unset"))
+            debug("WAYLAND_DISPLAY=" .. (os.getenv("WAYLAND_DISPLAY") or "unset"))
 
-          # Detect display server environment
-          detect_display_server() {
-            if [[ -n "''${WAYLAND_DISPLAY:-}" ]]; then
-              echo "wayland"
-            elif [[ -n "''${DISPLAY:-}" ]]; then
-              echo "x11"
+            -- Get clipboard types
+            local function get_clipboard_types()
+              local handle = io.popen("${pkgs.wl-clipboard}/bin/wl-paste --list-types 2>/dev/null")
+              if not handle then return "" end
+              local result = handle:read("*a") or ""
+              handle:close()
+              return result
+            end
+
+            -- Save image from clipboard to temp file
+            local function save_image(mime_type)
+              local tmpdir = os.getenv("TMPDIR") or "/tmp"
+              local timestamp = os.time()
+              local pid = os.getenv("$") or "0"
+              local filename = string.format("%s/kitty-clipboard-%s-%s.png", tmpdir, timestamp, pid)
+              
+              local cmd = string.format("${pkgs.wl-clipboard}/bin/wl-paste --type '%s' > '%s'", mime_type, filename)
+              local success = os.execute(cmd) == 0
+              
+              if success then
+                return filename
+              else
+                return nil
+              end
+            end
+
+            -- Send text to kitty
+            local function send_to_kitty(text)
+              local listen_on = os.getenv("KITTY_LISTEN_ON")
+              
+              local cmd
+              if listen_on then
+                cmd = string.format("${pkgs.kitty}/bin/kitty @ --to '%s' send-text --stdin", listen_on)
+              else
+                cmd = "${pkgs.kitty}/bin/kitty @ send-text --stdin"
+              end
+              
+              debug("send_to_kitty command: " .. cmd)
+              debug("text to send: " .. text)
+              
+              local handle = io.popen(cmd, "w")
+              if not handle then 
+                debug("failed to open pipe")
+                return false 
+              end
+              
+              handle:write(text)
+              local ok, exit_type, exit_code = handle:close()
+              
+              debug(string.format("close result: ok=%s, type=%s, code=%s", 
+                tostring(ok), tostring(exit_type), tostring(exit_code)))
+              
+              return ok and (exit_type == "exit" and exit_code == 0)
+            end
+
+            -- Paste from clipboard using kitty
+            local function paste_text()
+              local listen_on = os.getenv("KITTY_LISTEN_ON")
+              local cmd
+              
+              if listen_on then
+                cmd = string.format("${pkgs.kitty}/bin/kitty @ --to '%s' action paste_from_clipboard", listen_on)
+              else
+                cmd = "${pkgs.kitty}/bin/kitty @ action paste_from_clipboard"
+              end
+              
+              debug("paste_text command: " .. cmd)
+              local result = os.execute(cmd)
+              debug("paste_text result: " .. tostring(result))
+              
+              return result == true
+            end
+
+            -- Shell quote a string
+            local function shell_quote(str)
+              return "'" .. str:gsub("'", "'\"'\"'") .. "'"
+            end
+
+            -- Main logic
+            local types = get_clipboard_types()
+            debug("clipboard types: " .. types)
+
+            if types:match("image/") then
+              -- Handle image
+              debug("detected image in clipboard")
+              local mime_type = types:match("image/png") or types:match("image/[^%s]*")
+              if mime_type then
+                debug("using mime type: " .. mime_type)
+                local filename = save_image(mime_type)
+                if filename then
+                  local quoted = shell_quote(filename)
+                  debug("sending quoted filename: " .. quoted)
+                  if not send_to_kitty(quoted) then
+                    io.stderr:write("kitty-clipboard: failed to send image path to kitty\n")
+                    os.exit(1)
+                  end
+                  debug("image path sent successfully")
+                else
+                  io.stderr:write("kitty-clipboard: failed to save image\n")
+                  os.exit(1)
+                end
+              end
             else
-              echo "unknown"
-            fi
-          }
-
-          # Choose preferred X11 clipboard tool (prefer xclip over xsel)
-          choose_x11_tool() {
-            if have xclip; then
-              echo "xclip"
-            elif have xsel; then
-              echo "xsel"
-            else
-              echo "none"
-            fi
-          }
-
-          # Use Kitty's per-launch control socket if available (set by --allow-remote-control).
-          kitty_send_text() {
-            if [[ -n "''${KITTY_LISTEN_ON:-}" ]]; then
-              ${pkgs.kitty}/bin/kitty @ --to "$KITTY_LISTEN_ON" send-text --stdin
-            else
-              # Fallback: try default target (less secure; avoid if possible).
-              ${pkgs.kitty}/bin/kitty @ send-text --stdin
-            fi
-          }
-
-          # POSIX shell-quoting: wrap in single quotes and escape any embedded single quotes.
-          # Result is safe for bash, zsh, dash, etc.
-          sh_quote() {
-            local s=$1
-            # Replace each ' with '"'"'
-            printf "'%s'" "''${s//\'/\'\"\'\"\'}"
-          }
-
-          # Minimal URI percent-decoder (for file:// URIs). Converts %XX and + to space.
-          urldecode() {
-            local s=''${1//+/ } out
-            # Turn %XX into \xXX for printf %b. Non-hex sequences will cause printf to warn;
-            # we guard by only converting valid %HH patterns.
-            s="$(printf '%s' "$s" | sed -E 's/%([0-9a-fA-F]{2})/\\x\1/g')"
-            printf '%b' "$s"
-          }
-
-          # Choose best image MIME type: prefer image/png if present, else first image/*
-          pick_image_mime() {
-            local types=$1
-            local mime
-            mime="$(printf '%s\n' "$types" | awk '/^image\/png([;]|$)/{print; exit}')"
-            [[ -z "$mime" ]] && mime="$(printf '%s\n' "$types" | awk '/^image\//{print; exit}')"
-            printf '%s' "$mime"
-          }
-
-          # Derive a sane lowercase extension from a MIME type. Fallback to "bin".
-          ext_from_mime() {
-            local mime=$1 main=''${mime%%/*} rest=''${mime#*/}
-            local base=''${rest%%;*}
-            base=''${base,,}
-            case "$mime" in
-              image/jpeg|image/jpg) printf 'jpg';;
-              image/tiff)           printf 'tif';;
-              image/svg+xml)        printf 'svg';;
-              *)                    printf '%s' "''${base//[^a-z0-9]/}";;
-            esac
-            [[ -z "$base" ]] && printf 'bin'
-          }
-
-          # Create a unique path for saved image in TMPDIR (does not rely on non-portable mktemp suffix flags)
-          unique_image_path() {
-            local ext=$1
-            local tdir=''${CLIP2PATH_TMPDIR:-''${TMPDIR:-/tmp}}
-            [[ -d "$tdir" && -w "$tdir" ]] || die "temp dir not writable: $tdir"
-            local tmp
-            tmp="$(mktemp -p "$tdir" clip2path_XXXXXX)" || die "mktemp failed"
-            local file="''${tmp}.''${ext}"
-            mv "$tmp" "$file" || die "failed to reserve temp file"
-            printf '%s' "$file"
-          }
-
-          # Read the clipboard types (Wayland)
-          list_types_wayland() {
-            wl-paste --list-types 2>/dev/null || true
-          }
-
-          # Read the clipboard types (X11)
-          list_types_x11() {
-            local tool=$(choose_x11_tool)
-            case "$tool" in
-              xclip) xclip -selection clipboard -t TARGETS -o 2>/dev/null || true;;
-              xsel)  # xsel doesn't have direct TARGETS support, try common types
-                     local types=()
-                     xsel --clipboard --output >/dev/null 2>&1 && types+=("text/plain")
-                     # Check for images by trying to get image data
-                     if xclip -selection clipboard -t image/png -o >/dev/null 2>&1; then
-                       types+=("image/png")
-                     fi
-                     printf '%s\n' "''${types[@]}";;
-              *)     echo "";;
-            esac
-          }
-
-          # Read the clipboard types (unified interface)
-          list_types() {
-            local display_server=$(detect_display_server)
-            case "$display_server" in
-              wayland) list_types_wayland;;
-              x11)     list_types_x11;;
-              *)       echo "";;
-            esac
-          }
-
-          # Save image from Wayland clipboard
-          save_image_wayland() {
-            local mime=$1 file=$2
-            wl-paste --type "$mime" >"$file"
-          }
-
-          # Save image from X11 clipboard  
-          save_image_x11() {
-            local mime=$1 file=$2
-            local tool=$(choose_x11_tool)
-            case "$tool" in
-              xclip) xclip -selection clipboard -t "$mime" -o >"$file";;
-              xsel)  # xsel doesn't support MIME types directly, try generic
-                     xsel --clipboard --output >"$file";;
-              *)     return 1;;
-            esac
-          }
-
-          # Save image target to file and paste quoted path.
-          save_image_and_paste_path() {
-            local types=$1 mime ext file display_server
-            mime="$(pick_image_mime "$types")"
-            [[ -z "$mime" ]] && return 1
-            ext="$(ext_from_mime "$mime")"
-            [[ -z "$ext" ]] && ext="bin"
-            file="$(unique_image_path "$ext")"
-            debug "saving image as $file (mime=$mime)"
-            
-            display_server=$(detect_display_server)
-            case "$display_server" in
-              wayland) save_image_wayland "$mime" "$file";;
-              x11)     save_image_x11 "$mime" "$file";;
-              *)       return 1;;
-            esac
-            
-            if [[ $? -ne 0 ]]; then
-              rm -f -- "$file"
-              return 1
-            fi
-            
-            sh_quote "$file" | kitty_send_text
-          }
-
-          # ----- preflight -------------------------------------------------------------
-
-          have ${pkgs.kitty}/bin/kitty || die "missing dependency: kitty"
-
-          # Check display server and required clipboard tools
-          display_server=$(detect_display_server)
-          case "$display_server" in
-            wayland)
-              have wl-paste || die "missing dependency: wl-clipboard (wl-paste) for Wayland"
-              debug "detected Wayland environment"
-              ;;
-            x11)
-              x11_tool=$(choose_x11_tool)
-              [[ "$x11_tool" != "none" ]] || die "missing dependency: xclip or xsel for X11"
-              debug "detected X11 environment using $x11_tool"
-              ;;
-            *)
-              die "unsupported display server: neither WAYLAND_DISPLAY nor DISPLAY is set"
-              ;;
-          esac
-
-          # Check if running within Claude Code CLI (disabled)
-          # [[ "''${CLAUDECODE:-0}" == "1" ]] || die "clip2path: only works within Claude Code CLI terminal sessions"
-
-          # If launched via Kitty mapping with --allow-remote-control, KITTY_LISTEN_ON will be set.
-          if [[ -z "''${KITTY_LISTEN_ON:-}" ]]; then
-            debug "KITTY_LISTEN_ON not set; falling back to default kitty @ (consider using --allow-remote-control)"
-          fi
-
-          # ----- main ------------------------------------------------------------------
-
-          types="$(list_types)"
-          debug "clipboard types: $(printf '%q' "$types")"
-
-          # Hybrid approach: images → file paths, text → kitty paste
-          if grep -Eq '^image/' <<<"$types"; then
-            debug "found image in clipboard, saving to file"
-            if save_image_and_paste_path "$types"; then
-              exit 0
-            fi
-            debug "image save failed"
-            die "failed to save image from clipboard"
-          else
-            debug "no image found, delegating to kitty for text paste"
-            # Let kitty handle text with its safety features
-            if [[ -n "''${KITTY_LISTEN_ON:-}" ]]; then
-              ${pkgs.kitty}/bin/kitty @ --to "$KITTY_LISTEN_ON" action paste_from_clipboard
-            else
-              ${pkgs.kitty}/bin/kitty @ action paste_from_clipboard
-            fi
-          fi
-        '';
+              -- Handle text
+              debug("no image detected, handling as text")
+              if not paste_text() then
+                io.stderr:write("kitty-clipboard: failed to paste text\n")
+                os.exit(1)
+              end
+              debug("text paste completed successfully")
+            end
+          '';
+        };
 
         # Base kitty configuration (without the keys and clip2path)
         base-kitty-conf = pkgs.writeTextFile {
