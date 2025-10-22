@@ -253,19 +253,27 @@
             [[ -z "$ext" ]] && ext="bin"
             file="$(unique_image_path "$ext")"
             debug "saving image as $file (mime=$mime)"
-            
+
             display_server=$(detect_display_server)
             case "$display_server" in
               wayland) save_image_wayland "$mime" "$file";;
               x11)     save_image_x11 "$mime" "$file";;
               *)       return 1;;
             esac
-            
+
             if [[ $? -ne 0 ]]; then
               rm -f -- "$file"
               return 1
             fi
-            
+
+            # Guard against empty images: verify file exists and has non-zero size
+            # Empty images cause catastrophic API errors that require restarting Claude Code session
+            if [[ ! -s "$file" ]]; then
+              debug "image file is empty, refusing to paste: $file"
+              rm -f -- "$file"
+              die "clipboard image is empty (0 bytes)"
+            fi
+
             sh_quote "$file" | kitty_send_text
           }
 
