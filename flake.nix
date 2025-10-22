@@ -266,12 +266,19 @@
               return 1
             fi
 
-            # Guard against empty images: verify file exists and has non-zero size
+            # Guard against empty/invalid images: verify file exists, has non-zero size, and is a valid image
             # Empty images cause catastrophic API errors that require restarting Claude Code session
             if [[ ! -s "$file" ]]; then
               debug "image file is empty, refusing to paste: $file"
               rm -f -- "$file"
               die "clipboard image is empty (0 bytes)"
+            fi
+            # Verify it's actually an image using ImageMagick's identify
+            # This properly validates the image structure, not just file extension or magic bytes
+            if ! ${pkgs.imagemagick}/bin/identify "$file" >/dev/null 2>&1; then
+              debug "file is not a valid image: $file"
+              rm -f -- "$file"
+              die "clipboard content is not a valid image (possibly expired or unavailable)"
             fi
 
             sh_quote "$file" | kitty_send_text
@@ -378,8 +385,6 @@
 
             # kitty-scrollback
             allow_remote_control socket-only
-            allow_remote_control yes
-
             listen_on unix:/tmp/kitty
             # kitty-scrollback.nvim Kitten alias
             action_alias kitty_scrollback_nvim kitten /home/admin/.local/share/nvim/lazy/kitty-scrollback.nvim/python/kitty_scrollback_nvim.py
