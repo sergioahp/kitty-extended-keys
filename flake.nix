@@ -15,7 +15,10 @@
           # Control + letters
           "ctrl+h"        = "\\x1b[104;5u";
           "ctrl+i"        = "\\x1b[105;5u";
-          "ctrl+j"        = "\\x1b[106;5u";
+          # This was stopping my keybinds on ctlr+j in zsh from working, but
+          # does not prevent me form using this keys on nvim, this applies to
+          # ctrl+{i,j,m}
+          # "ctrl+j"        = "\\x1b[106;5u";
           "ctrl+m"        = "\\x1b[109;5u";
 
           # Control+Shift + letters (note: some commented out in your config)
