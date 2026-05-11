@@ -47,7 +47,7 @@
           # "ctrl+shift+v" = "\\x1b[86;5u";  # commented in your config
           "ctrl+shift+w"  = "\\x1b[87;5u";
           "ctrl+shift+x"  = "\\x1b[88;5u";
-          # ctrl+shift+y is reserved for hyprvoice start-with-context (see hyprvoice-conf below)
+          # ctrl+shift+y is reserved for hyprvoice context recording (see hyprvoice-conf below)
           "ctrl+shift+z"  = "\\x1b[90;5u";
 
           # Control + digits (ctrl+0 commented in your config)
@@ -417,7 +417,7 @@
           name = "kitty-hyprvoice.conf";
           text = ''
             # hyprvoice: start recording with terminal scrollback as transcription context
-            map ctrl+period>ctrl+period launch --stdin-source=@screen_scrollback --type=background hyprvoice start-with-context
+            map ctrl+period>ctrl+period launch --stdin-source=@screen_scrollback --type=background hyprvoice toggle
           '';
         };
 
