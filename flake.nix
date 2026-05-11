@@ -20,6 +20,7 @@
           # ctrl+{i,j,m}
           # "ctrl+j"        = "\\x1b[106;5u";
           "ctrl+m"        = "\\x1b[109;5u";
+          "ctrl+,"        = "\\x1b[44;5u";
 
           # Control+Shift + letters (note: some commented out in your config)
           "ctrl+shift+a"  = "\\x1b[65;5u";
@@ -46,7 +47,7 @@
           # "ctrl+shift+v" = "\\x1b[86;5u";  # commented in your config
           "ctrl+shift+w"  = "\\x1b[87;5u";
           "ctrl+shift+x"  = "\\x1b[88;5u";
-          "ctrl+shift+y"  = "\\x1b[89;5u";
+          # ctrl+shift+y is reserved for hyprvoice start-with-context (see hyprvoice-conf below)
           "ctrl+shift+z"  = "\\x1b[90;5u";
 
           # Control + digits (ctrl+0 commented in your config)
@@ -410,6 +411,16 @@
           '';
         };
 
+        # hyprvoice context recording: pipe scrollback as transcription context
+        # Uses a chord (ctrl+period twice) so it doesn't collide with normal ctrl+period use.
+        hyprvoice-conf = pkgs.writeTextFile {
+          name = "kitty-hyprvoice.conf";
+          text = ''
+            # hyprvoice: start recording with terminal scrollback as transcription context
+            map ctrl+period>ctrl+period launch --stdin-source=@screen_scrollback --type=background hyprvoice start-with-context
+          '';
+        };
+
         # Create a kitty variant with extended keys built-in
           # kitty ignores system config if profided config arg
           # TODO: a postfixup wrapper for convenince (the user could pass
@@ -424,27 +435,62 @@
             buildInputs = [ pkgs.makeWrapper ];
             postBuild = ''
               wrapProgram $out/bin/kitty \
-                --add-flags "--config ${base-kitty-conf} --config ${claude-code-conf} --config ${extended-keys-conf}"
+                --add-flags "--config ${base-kitty-conf} --config ${claude-code-conf} --config ${hyprvoice-conf} --config ${extended-keys-conf}"
             '';
           });
+
+          # Wraps kitty-extended so each new OS window gets a random blue-tinted background.
+          # Colors are subtle variations of the base #282c3c (Tokyo Night dark blue-grey).
+          kitty-random-bg-wrapper = pkgs.writeShellScript "kitty-random-bg-wrapper" ''
+            colors=(
+              "#282c3c"  # base (Tokyo Night blue-grey)
+              "#0d1117"  # near-black navy
+              "#1a1535"  # deep indigo
+              "#0e2030"  # deep ocean
+              "#162b20"  # dark blue-green
+              "#2b1f3d"  # purple-blue
+              "#1e3a4a"  # steel teal
+              "#30283f"  # blue-mauve
+              "#0a1525"  # very deep navy
+              "#1f3028"  # dark jade
+              "#341f38"  # dark plum
+              "#14253a"  # midnight blue
+              "#253048"  # cool slate
+              "#1a3020"  # forest blue-green
+              "#28153f"  # deep violet
+              "#102028"  # darkest teal
+            )
+            idx=$((RANDOM % ''${#colors[@]}))
+            exec ${kitty-extended}/bin/kitty --override "background=''${colors[$idx]}" "$@"
+          '';
+
+          kitty-with-random-bg = pkgs.symlinkJoin {
+            name = "kitty-with-random-bg";
+            paths = [ kitty-extended ];
+            postBuild = ''
+              ln -sf ${kitty-random-bg-wrapper} $out/bin/kitty
+            '';
+          };
       in
       {
         packages = {
-          default = kitty-extended;
+          default = kitty-with-random-bg;
           extended-keys-conf = extended-keys-conf;
           base-kitty-conf = base-kitty-conf;
           claude-code-conf = claude-code-conf;
+          hyprvoice-conf = hyprvoice-conf;
           kitty-clipboard-handler = kitty-clipboard-handler;
           kitty-extended = kitty-extended;
+          kitty-with-random-bg = kitty-with-random-bg;
         };
 
         apps.default = {
           type = "app";
-          program = "${kitty-extended}/bin/kitty";
+          program = "${kitty-with-random-bg}/bin/kitty";
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ kitty-extended ];
+          packages = [ kitty-with-random-bg ];
         };
       };
   in
