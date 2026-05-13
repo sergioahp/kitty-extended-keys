@@ -1,0 +1,23 @@
+{
+  foreground = "#c0caf5";
+  background = "#282c3c";
+
+  color1 = "#f7768e";
+  color2 = "#9ece6a";
+  color3 = "#e0af68";
+  color4 = "#7aa2f7";
+  color5 = "#bb9af7";
+  color6 = "#7dcfff";
+  color7 = "#a9b1d6";
+
+  color9 = "#ff899d";
+  color10 = "#9fe044";
+  color11 = "#faba4a";
+  color12 = "#8db0ff";
+  color13 = "#c7a9ff";
+  color14 = "#a4daff";
+  color15 = "#c0caf5";
+
+  color16 = "#ff9e64";
+  color17 = "#db4b4b";
+}

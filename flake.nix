@@ -1,234 +1,46 @@
 {
-  description = "Kitty extended keys as a pkg + devShell (no Home Manager needed)";
+  description = "Composable kitty config modules and wrapper package";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs";
+  inputs = {
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    nixpkgs.url = "github:NixOS/nixpkgs";
+  };
 
-  outputs = { self, nixpkgs }:
-  let
-    mkFor = system:
-      let
-        pkgs = import nixpkgs { inherit system; };
-        lib = pkgs.lib;
+  outputs = inputs@{ flake-parts, nixpkgs, ... }:
+    let
+      kittyLib = import ./lib { lib = nixpkgs.lib; };
+      kittyFlakeModule = import ./flake-module.nix { inherit kittyLib; };
+    in
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
 
-        # --- Extended key bindings (matches your system kitty config) ---
-        bindings = {
-          # Control + letters
-          "ctrl+h"        = "\\x1b[104;5u";
-          "ctrl+i"        = "\\x1b[105;5u";
-          # This was stopping my keybinds on ctlr+j in zsh from working, but
-          # does not prevent me form using this keys on nvim, this applies to
-          # ctrl+{i,j,m}
-          # "ctrl+j"        = "\\x1b[106;5u";
-          "ctrl+m"        = "\\x1b[109;5u";
-          "ctrl+,"        = "\\x1b[44;5u";
+      imports = [ kittyFlakeModule ];
 
-          # Control+Shift + letters (note: some commented out in your config)
-          "ctrl+shift+a"  = "\\x1b[65;5u";
-          # "ctrl+shift+b" = "\\x1b[66;5u";  # commented in your config
-          # "ctrl+shift+c" = "\\x1b[67;5u";  # commented in your config
-          "ctrl+shift+d"  = "\\x1b[68;5u";
-          "ctrl+shift+e"  = "\\x1b[69;5u";
-          # "ctrl+shift+f" = "\\x1b[70;5u";  # commented in your config
-          "ctrl+shift+g"  = "\\x1b[71;5u";
-          "ctrl+shift+h"  = "\\x1b[72;5u";
-          "ctrl+shift+i"  = "\\x1b[73;5u";
-          "ctrl+shift+j"  = "\\x1b[74;5u";
-          "ctrl+shift+k"  = "\\x1b[75;5u";
-          "ctrl+shift+l"  = "\\x1b[76;5u";
-          "ctrl+shift+m"  = "\\x1b[77;5u";
-          "ctrl+shift+n"  = "\\x1b[78;5u";
-          "ctrl+shift+o"  = "\\x1b[79;5u";
-          "ctrl+shift+p"  = "\\x1b[80;5u";
-          "ctrl+shift+q"  = "\\x1b[81;5u";
-          "ctrl+shift+r"  = "\\x1b[82;5u";
-          "ctrl+shift+s"  = "\\x1b[83;5u";
-          "ctrl+shift+t"  = "\\x1b[84;5u";
-          "ctrl+shift+u"  = "\\x1b[85;5u";
-          # "ctrl+shift+v" = "\\x1b[86;5u";  # commented in your config
-          "ctrl+shift+w"  = "\\x1b[87;5u";
-          "ctrl+shift+x"  = "\\x1b[88;5u";
-          # ctrl+shift+v left unmapped (kitty native paste); ctrl+shift+y reserved for hyprvoice
-          "ctrl+shift+z"  = "\\x1b[90;5u";
-
-          # Control + digits (ctrl+0 commented in your config)
-          "ctrl+1"        = "\\x1b[49;5u";
-          "ctrl+2"        = "\\x1b[50;5u";
-          "ctrl+3"        = "\\x1b[51;5u";
-          "ctrl+4"        = "\\x1b[52;5u";
-          "ctrl+5"        = "\\x1b[53;5u";
-          "ctrl+6"        = "\\x1b[54;5u";
-          "ctrl+7"        = "\\x1b[55;5u";
-          "ctrl+8"        = "\\x1b[56;5u";
-          "ctrl+9"        = "\\x1b[57;5u";
-
-          # Control+Shift + digits
-          "ctrl+shift+0"  = "\\x1b[48;6u";
-          "ctrl+shift+1"  = "\\x1b[49;6u";
-          "ctrl+shift+2"  = "\\x1b[50;6u";
-          "ctrl+shift+3"  = "\\x1b[51;6u";
-          "ctrl+shift+4"  = "\\x1b[52;6u";
-          "ctrl+shift+5"  = "\\x1b[53;6u";
-          "ctrl+shift+6"  = "\\x1b[54;6u";
-          "ctrl+shift+7"  = "\\x1b[55;6u";
-          "ctrl+shift+8"  = "\\x1b[56;6u";
-          "ctrl+shift+9"  = "\\x1b[57;6u";
+      perSystem = { config, pkgs, ... }: {
+        kittyExtendedKeys = {
+          features.base.enable = true;
+          features.extendedKeys.enable = true;
         };
 
-        mkLine = k: v: "map ${k} send_text application ${v}";
-        cfgText = lib.concatStringsSep "\n" (lib.mapAttrsToList mkLine bindings) + "\n";
-
-        extended-keys-conf = pkgs.writeTextFile {
-          name = "kitty-extended-keys.conf";
-          text = cfgText;
-        };
-
-        # Base kitty configuration (without the extended keys)
-        base-kitty-conf = pkgs.writeTextFile {
-          name = "kitty-base.conf";
-          text = ''
-            # Kitty Configuration
-            # Generated from home-manager alacritty config
-
-            font_size 12
-
-            # Cursor
-            cursor_blink_interval 0
-            cursor_trail 1
-            cursor_trail_decay 0.05 0.1
-
-            # Window
-            confirm_os_window_close 0
-
-            # Transparency
-            background_opacity 0.8
-
-            # Color scheme (Tokyo Night)
-            foreground #c0caf5
-            background #282c3c
-
-            # Normal colors
-            color1  #f7768e
-            color2  #9ece6a
-            color3  #e0af68
-            color4  #7aa2f7
-            color5  #bb9af7
-            color6  #7dcfff
-            color7  #a9b1d6
-
-            # Bright colors
-            color9  #ff899d
-            color10 #9fe044
-            color11 #faba4a
-            color12 #8db0ff
-            color13 #c7a9ff
-            color14 #a4daff
-            color15 #c0caf5
-
-            # Additional colors
-            color16 #ff9e64
-            color17 #db4b4b
-
-            # kitty-scrollback
-            allow_remote_control socket-only
-            listen_on unix:/tmp/kitty
-            # kitty-scrollback.nvim Kitten alias
-            action_alias kitty_scrollback_nvim kitten /home/admin/.local/share/nvim/lazy/kitty-scrollback.nvim/python/kitty_scrollback_nvim.py
-            # Browse scrollback buffer in nvim
-            map kitty_mod+h kitty_scrollback_nvim
-            # Browse output of the last shell command in nvim
-            map kitty_mod+g kitty_scrollback_nvim --config ksb_builtin_last_cmd_output
-            # Show clicked command output in nvim
-            mouse_map ctrl+shift+right press ungrabbed combine : mouse_select_command_output : kitty_scrollback_nvim --config ksb_builtin_last_visited_cmd_output
-          '';
-        };
-
-        # hyprvoice context recording: pipe scrollback as transcription context
-        # Uses a chord (ctrl+period twice) so it doesn't collide with normal ctrl+period use.
-        hyprvoice-conf = pkgs.writeTextFile {
-          name = "kitty-hyprvoice.conf";
-          text = ''
-            # hyprvoice: start recording with terminal scrollback as transcription context
-            map ctrl+period>ctrl+period launch --stdin-source=@screen_scrollback --type=background hyprvoice toggle
-          '';
-        };
-
-        # Create a kitty variant with extended keys built-in
-          # kitty ignores system config if profided config arg
-          # TODO: a postfixup wrapper for convenince (the user could pass
-          # extra --config kwargs for using his config) (Not sure if we
-          # want to do this, it's not too much effort to pass
-          # ~/.config/kitty/kitty.conf
-          # TODO: should kitty-extended reflect kitty version?
-          kitty-extended = (pkgs.symlinkJoin {
-            pname = "kitty-extended";
-            version = "0.0.1";
-            paths = [ pkgs.kitty ];
-            buildInputs = [ pkgs.makeWrapper ];
-            postBuild = ''
-              wrapProgram $out/bin/kitty \
-                --add-flags "--config ${base-kitty-conf} --config ${hyprvoice-conf} --config ${extended-keys-conf}"
-            '';
-          });
-
-          # Wraps kitty-extended so each new OS window gets a random blue-tinted background.
-          # Colors are subtle variations of the base #282c3c (Tokyo Night dark blue-grey).
-          kitty-random-bg-wrapper = pkgs.writeShellScript "kitty-random-bg-wrapper" ''
-            colors=(
-              "#282c3c"  # base (Tokyo Night blue-grey)
-              "#0d1117"  # near-black navy
-              "#1a1535"  # deep indigo
-              "#0e2030"  # deep ocean
-              "#162b20"  # dark blue-green
-              "#2b1f3d"  # purple-blue
-              "#1e3a4a"  # steel teal
-              "#30283f"  # blue-mauve
-              "#0a1525"  # very deep navy
-              "#1f3028"  # dark jade
-              "#341f38"  # dark plum
-              "#14253a"  # midnight blue
-              "#253048"  # cool slate
-              "#28153f"  # deep violet
-              "#102028"  # darkest teal
-            )
-            idx=$((RANDOM % ''${#colors[@]}))
-            exec ${kitty-extended}/bin/kitty --override "background=''${colors[$idx]}" "$@"
-          '';
-
-          kitty-with-random-bg = pkgs.symlinkJoin {
-            name = "kitty-with-random-bg";
-            paths = [ kitty-extended ];
-            postBuild = ''
-              ln -sf ${kitty-random-bg-wrapper} $out/bin/kitty
-            '';
-          };
-      in
-      {
-        packages = {
-          default = kitty-with-random-bg;
-          extended-keys-conf = extended-keys-conf;
-          base-kitty-conf = base-kitty-conf;
-          hyprvoice-conf = hyprvoice-conf;
-          kitty-extended = kitty-extended;
-          kitty-with-random-bg = kitty-with-random-bg;
-        };
+        packages.default = config.kittyExtendedKeys.rendered.package;
 
         apps.default = {
           type = "app";
-          program = "${kitty-with-random-bg}/bin/kitty";
+          program =
+            "${config.kittyExtendedKeys.rendered.package}/bin/${config.kittyExtendedKeys.rendered.mainProgram}";
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ kitty-with-random-bg ];
+          packages = [ config.kittyExtendedKeys.rendered.package ];
         };
       };
-  in
-  {
-    # Build for common systems; add others as needed
-    packages.x86_64-linux = (mkFor "x86_64-linux").packages;
-    packages.aarch64-linux = (mkFor "aarch64-linux").packages;
-    devShells.x86_64-linux = (mkFor "x86_64-linux").devShells;
-    devShells.aarch64-linux = (mkFor "aarch64-linux").devShells;
-    apps.x86_64-linux = (mkFor "x86_64-linux").apps;
-    apps.aarch64-linux = (mkFor "aarch64-linux").apps;
-  };
+
+      flake = {
+        lib = kittyLib;
+        flakeModules.default = kittyFlakeModule;
+      };
+    };
 }
