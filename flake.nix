@@ -28,7 +28,7 @@
           # "ctrl+shift+c" = "\\x1b[67;5u";  # commented in your config
           "ctrl+shift+d"  = "\\x1b[68;5u";
           "ctrl+shift+e"  = "\\x1b[69;5u";
-          # "ctrl+shift+f" = "\\x1b[70;5u";  # commented in your config
+          "ctrl+shift+f"  = "\\x1b[70;5u";
           "ctrl+shift+g"  = "\\x1b[71;5u";
           "ctrl+shift+h"  = "\\x1b[72;5u";
           "ctrl+shift+i"  = "\\x1b[73;5u";
